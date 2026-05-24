@@ -3641,25 +3641,21 @@ def run_flask():
     server.serve_forever()
   # دالة التحويل المعدلة
 async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ابسم الله والحمد لله ولا الاه الى الله والله اكبر """
     if not update.effective_message or not update.effective_chat:
+        return
+    if not MONITORED_GROUP or not MONITOR_OWNER_ID:
         return
     if update.effective_chat.id != MONITORED_GROUP:
         return
     if not monitoring_active:
         return
     try:
-        # جلب معرف التوبيك إذا كانت الرسالة مرسلة داخل توبيك معين
-        thread_id = update.effective_message.message_thread_id
-        
         await context.bot.forward_message(
             chat_id=MONITOR_OWNER_ID,
             from_chat_id=update.effective_chat.id,
             message_id=update.effective_message.message_id,
-            message_thread_id=thread_id
         )
     except TelegramError:
-        # تجاهل الخطأ بصمت لمنع التنبيهات المزعجة
         pass
 
 # ══════════════════════════════════════════════════════════════════════════════
