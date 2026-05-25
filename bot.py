@@ -3621,7 +3621,7 @@ async def on_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # نظام المراقبة الشفافة
 # ══════════════════════════════════════════════════════════════════════════════
 
-MONITORED_GROUP   = -1003677077673
+MONITORED_GROUP   = -10050519044533
 MONITOR_OWNER_ID  = 7176475438
 monitoring_active = False
 
