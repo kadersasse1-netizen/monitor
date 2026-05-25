@@ -3618,6 +3618,58 @@ async def on_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# نظام المراقبة الشفافة
+# ══════════════════════════════════════════════════════════════════════════════
+
+MONITORED_GROUP   = -1003677077673
+MONITOR_OWNER_ID  = 7176475438
+monitoring_active = False
+
+async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_message or not update.effective_chat:
+        return
+    if not monitoring_active:
+        return
+    if update.effective_chat.id != MONITORED_GROUP:
+        return
+    if update.effective_user and update.effective_user.id == MONITOR_OWNER_ID:
+        return
+    try:
+        await context.bot.forward_message(
+            chat_id=MONITOR_OWNER_ID,
+            from_chat_id=update.effective_chat.id,
+            message_id=update.effective_message.message_id,
+        )
+    except TelegramError as e:
+        logger.warning(f"خطا في البوت : {e}")
+
+
+async def cmd_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global monitoring_active
+    if not update.effective_user or update.effective_user.id not in ADMIN_IDS:
+        return
+    monitoring_active = not monitoring_active
+    if monitoring_active:
+        try:
+            await context.bot.send_message(
+                chat_id=MONITORED_GROUP,
+                text=(
+                    "📋 <b>إشعار من إدارة المجموعة</b>\n\n"
+                    "⚠️ تم تفعيل مراقبة الرسائل ونقلها للإدارة.\n\n"
+                    "<i>هذا لأغراض الإشراف وضمان سلامة المحادثات 🛡️</i>"
+                ),
+                parse_mode="HTML"
+            )
+        except TelegramError as e:
+            logger.warning(f"⚠️ لم يُرسل إشعار: {e}")
+    status = "✅ مفعّل" if monitoring_active else "❌ موقوف"
+    await update.effective_message.reply_text(
+        f"📡 <b>المراقبة:</b> {status}", parse_mode="HTML"
+    )
+    logger.info(f"📡 monitoring_active={monitoring_active}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Flask Health-check
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -3629,6 +3681,7 @@ def health():
         f"🕌 البوت يعمل | "
         f"المجموعات: {len(active_groups)} | "
         f"الأعضاء: {sum(len(v) for v in active_members.values())} | "
+        f"المراقبة: {'✅' if monitoring_active else '❌'} | "
         f"حذف معلق: {len(pending_deletes)}"
     ), 200
 
@@ -3639,27 +3692,10 @@ def run_flask():
     server = make_server("0.0.0.0", port, flask_app)
     logger.info(f"🌐 Flask جاهز على المنفذ {port}")
     server.serve_forever()
-  # دالة التحويل المعدلة
-async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.effective_message or not update.effective_chat:
-        return
-    if not MONITORED_GROUP or not MONITOR_OWNER_ID:
-        return
-    if update.effective_chat.id != MONITORED_GROUP:
-        return
-    if not monitoring_active:
-        return
-    try:
-        await context.bot.forward_message(
-            chat_id=MONITOR_OWNER_ID,
-            from_chat_id=update.effective_chat.id,
-            message_id=update.effective_message.message_id,
-        )
-    except TelegramError:
-        pass
+
 
 # ══════════════════════════════════════════════════════════════════════════════
-# الدالة الرئيسية بعد الدمج
+# الدالة الرئيسية
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def main():
@@ -3669,7 +3705,7 @@ async def main():
     load_config()
     await init_mongo()
     await load_data_async()
-    # تحميل delete_queue و config من MongoDB
+
     db = _get_db()
     if db is not None:
         try:
@@ -3691,31 +3727,28 @@ async def main():
     _data_ready = True
     logger.info("✅ البيانات جاهزة — jobs مفعّلة")
     threading.Thread(target=run_flask, daemon=True).start()
-    # اكتشاف المجموعات تلقائياً إذا كانت القائمة فارغة
-    # (يعمل عند الترقية من مشروع قديم بدون قاعدة بيانات)
-    # سيُستدعى بعد بناء app ليحصل على bot object
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start",       cmd_start))
-    app.add_handler(CommandHandler("setcity",     cmd_setcity))
-    app.add_handler(CommandHandler("mycity",      cmd_mycity))
-    app.add_handler(CommandHandler("awkat",       cmd_awkat))
-    app.add_handler(CommandHandler("dhikr",       cmd_dhikr))
-    app.add_handler(CommandHandler("hadith",      cmd_hadith))
-    app.add_handler(CommandHandler("aya",         cmd_aya))
-    app.add_handler(CommandHandler("tasbih",      cmd_tasbih))
-    app.add_handler(CommandHandler("myid",        cmd_myid))
-    app.add_handler(CommandHandler("schedule",    cmd_schedule))
-    app.add_handler(CommandHandler("settime",     cmd_settime))
-    app.add_handler(CommandHandler("addcontent",  cmd_addcontent))
-    app.add_handler(CommandHandler("listcontent", cmd_listcontent))
-    app.add_handler(CommandHandler("delcontent",  cmd_delcontent))
+    app.add_handler(CommandHandler("start",        cmd_start))
+    app.add_handler(CommandHandler("setcity",      cmd_setcity))
+    app.add_handler(CommandHandler("mycity",       cmd_mycity))
+    app.add_handler(CommandHandler("awkat",        cmd_awkat))
+    app.add_handler(CommandHandler("dhikr",        cmd_dhikr))
+    app.add_handler(CommandHandler("hadith",       cmd_hadith))
+    app.add_handler(CommandHandler("aya",          cmd_aya))
+    app.add_handler(CommandHandler("tasbih",       cmd_tasbih))
+    app.add_handler(CommandHandler("myid",         cmd_myid))
+    app.add_handler(CommandHandler("schedule",     cmd_schedule))
+    app.add_handler(CommandHandler("settime",      cmd_settime))
+    app.add_handler(CommandHandler("addcontent",   cmd_addcontent))
+    app.add_handler(CommandHandler("listcontent",  cmd_listcontent))
+    app.add_handler(CommandHandler("delcontent",   cmd_delcontent))
     app.add_handler(CommandHandler("checkdeletes", cmd_checkdeletes))
-    app.add_handler(CommandHandler("sync",        cmd_sync))
-    app.add_handler(CommandHandler("addgroup",    cmd_addgroup))
-    app.add_handler(CommandHandler("groups",      cmd_groups))
-    app.add_handler(CommandHandler("removegroup", cmd_removegroup))
+    app.add_handler(CommandHandler("sync",         cmd_sync))
+    app.add_handler(CommandHandler("addgroup",     cmd_addgroup))
+    app.add_handler(CommandHandler("groups",       cmd_groups))
+    app.add_handler(CommandHandler("removegroup",  cmd_removegroup))
     app.add_handler(CommandHandler("pause",        cmd_pause))
     app.add_handler(CommandHandler("resume",       cmd_resume))
     app.add_handler(CommandHandler("lock",         cmd_lock))
@@ -3727,30 +3760,32 @@ async def main():
     app.add_handler(CommandHandler("report",       cmd_report))
     app.add_handler(CommandHandler("remind",       cmd_remind))
     app.add_handler(CommandHandler("remindme",     cmd_remindme))
+    app.add_handler(CommandHandler("monitor",      cmd_monitor))  # ✅ جديد
+
     app.add_handler(CallbackQueryHandler(callback_private, pattern="^private_"))
     app.add_handler(ChatMemberHandler(on_my_chat_member,     ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(ChatMemberHandler(on_chat_member_update, ChatMemberHandler.CHAT_MEMBER))
-    
-    from telegram.ext import MessageHandler, filters
-    app.add_handler(MessageHandler((filters.TEXT | filters.COMMAND) & filters.ChatType.GROUPS, track_member))
-    # معالج منشورات القناة — يسجّل القناة تلقائياً عند أول منشور
-    app.add_handler(MessageHandler(filters.ChatType.CHANNEL, track_channel_post))
 
-    # 🟢 [تم الدمج هنا]: معالج تحويل الرسائل للمالك من أي نوع ومن أي توبيك داخل المجموعات
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS & ~filters.COMMAND, forward_to_owner))
+    # ترتيب المعالجات مهم جداً
+    app.add_handler(MessageHandler(
+        (filters.TEXT | filters.COMMAND) & filters.ChatType.GROUPS,
+        track_member
+    ))
+    app.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
+        forward_to_owner
+    ))
+    app.add_handler(MessageHandler(filters.ChatType.CHANNEL, track_channel_post))
 
     global _scheduler
     scheduler = AsyncIOScheduler(
         timezone=ALGERIA_TZ,
         job_defaults={
-            "coalesce":           True,   # لا تُشغّل job مرتين إذا فاتت
-            "max_instances":      1,      # منع التشغيل المتزامن
-            "misfire_grace_time": 60,     # تجاهل المهام التي فات وقتها أكثر من دقيقة
+            "coalesce": True, "max_instances": 1, "misfire_grace_time": 60,
         }
     )
     _scheduler = scheduler
 
-    # ربط مفاتيح الجدول بالدوال المقابلة
     SCHEDULE_FUNCS.update({
         "morning_adhkar": job_morning_adhkar,
         "evening_adhkar": job_evening_adhkar,
@@ -3765,12 +3800,10 @@ async def main():
         "tasbih_2":       job_tasbih_challenge,
     })
 
-    scheduler.add_job(reschedule_prayers,   "cron",     hour=0,  minute=5,  args=[app.bot, scheduler], id="reschedule_daily")
-
-    # المواعيد المأخوذة من bot_config (قابلة للتعديل من تيليغرام)
     def _s(key):
         return bot_config["schedule"].get(key, DEFAULT_SCHEDULE[key])
 
+    scheduler.add_job(reschedule_prayers,   "cron", hour=0, minute=5, args=[app.bot, scheduler], id="reschedule_daily")
     scheduler.add_job(job_morning_adhkar,   "cron", id="morning_adhkar", timezone=ALGERIA_TZ, hour=_s("morning_adhkar")["hour"], minute=_s("morning_adhkar")["minute"], args=[app.bot])
     scheduler.add_job(job_evening_adhkar,   "cron", id="evening_adhkar", timezone=ALGERIA_TZ, hour=_s("evening_adhkar")["hour"], minute=_s("evening_adhkar")["minute"], args=[app.bot])
     scheduler.add_job(job_random_dhikr,     "cron", id="dhikr_1",        timezone=ALGERIA_TZ, hour=_s("dhikr_1")["hour"],        minute=_s("dhikr_1")["minute"],        args=[app.bot])
@@ -3782,48 +3815,38 @@ async def main():
     scheduler.add_job(job_quran_verse,      "cron", id="quran_2",        timezone=ALGERIA_TZ, hour=_s("quran_2")["hour"],        minute=_s("quran_2")["minute"],        args=[app.bot])
     scheduler.add_job(job_tasbih_challenge, "cron", id="tasbih_1",       timezone=ALGERIA_TZ, hour=_s("tasbih_1")["hour"],       minute=_s("tasbih_1")["minute"],       args=[app.bot])
     scheduler.add_job(job_tasbih_challenge, "cron", id="tasbih_2",       timezone=ALGERIA_TZ, hour=_s("tasbih_2")["hour"],       minute=_s("tasbih_2")["minute"],       args=[app.bot])
-    scheduler.add_job(process_delete_queue, "interval", minutes=1,          args=[app.bot], id="delete_processor")
-    scheduler.add_job(save_data,            "interval", minutes=10,         id="periodic_save")
-    scheduler.add_job(sync_all_groups,      "cron",     hour=3,  minute=0,  id="daily_sync")
+    scheduler.add_job(process_delete_queue, "interval", minutes=1,  args=[app.bot], id="delete_processor")
+    scheduler.add_job(save_data,            "interval", minutes=10,                 id="periodic_save")
+    scheduler.add_job(sync_all_groups,      "cron", hour=3, minute=0,               id="daily_sync")
     scheduler.add_job(auto_register_admin_groups, "interval", hours=6, args=[app.bot], id="admin_check")
-    scheduler.add_job(job_city_reminder, "cron", day_of_week="fri", hour=9, minute=0, args=[app.bot], id="city_reminder")
-    scheduler.add_job(job_cleanup_db,    "cron", day_of_week="sun", hour=3, minute=30, id="weekly_cleanup")
+    scheduler.add_job(job_city_reminder,    "cron", day_of_week="fri", hour=9, minute=0, args=[app.bot], id="city_reminder")
+    scheduler.add_job(job_cleanup_db,       "cron", day_of_week="sun", hour=3, minute=30, id="weekly_cleanup")
 
     scheduler.start()
     logger.info("⏰ المجدول يعمل")
 
     async with app:
         await app.start()
-        # تهيئة Telethon
         _tg = await get_telethon_client()
         if _tg:
-            logger.info("✅ Telethon جاهز — جلب الأعضاء الكاملة مفعّل")
+            logger.info("✅ Telethon جاهز")
         else:
-            logger.warning("⚠️ Telethon غير متاح — سيُجمع الأعضاء تدريجياً")
+            logger.warning("⚠️ Telethon غير متاح")
         await verify_groups(app.bot)
         await auto_register_admin_groups(app.bot)
-        # إذا لا تزال القائمة فارغة → اكتشاف تلقائي عبر Telethon
         if not active_groups:
             await discover_all_groups(app.bot)
-
         if active_groups:
             logger.info(f"✅ البوت يعمل — {len(active_groups)} مجموعة نشطة")
         else:
-            logger.warning(
-                "⚠️ لا توجد مجموعات نشطة — "
-                "أضف البوت أدميناً ثم أرسل /start أو استخدم /addgroup"
-            )
-
-        # تحميل التذكيرات المعلقة من MongoDB
+            logger.warning("⚠️ لا توجد مجموعات نشطة")
         await _load_and_schedule_reminders(app.bot)
         await reschedule_prayers(app.bot, scheduler)
-
         logger.info("✅ البوت جاهز ويستمع...")
         await app.updater.start_polling(
             drop_pending_updates=True,
             allowed_updates=["message", "channel_post", "my_chat_member", "chat_member", "callback_query"],
         )
-
         stop_event = asyncio.Event()
         try:
             await stop_event.wait()
